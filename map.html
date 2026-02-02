@@ -47,150 +47,129 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+  console.log("Map script started");
 
-    window.updateUserPosition = function(lat, lng) {
-    console.log("UPDATE CALLED → lat:", lat, "lng:", lng);
-    alert("Position received:\nLat: " + lat + "\nLng: " + lng);
-    // your normal code here...
-};
-    
-    // ────────────────────────────────────────────────
-    // GLOBAL VARIABLES
-    // ────────────────────────────────────────────────
+  let map = null;
+  let userMarker = null;
 
-    // Reference to the map object
-    var map = null;
+  const FALLBACK_LAT = -29.858;
+  const FALLBACK_LNG = 31.021;
 
-    // Reference to the user position marker (so we can update it later)
-    var userMarker = null;
+  const markerIcon = L.icon({
+    iconUrl:    'https://i.ibb.co/ghQpS4H/marker-icon.png',      // ← your real link
+    shadowUrl:  'https://i.ibb.co/GvH6GsJX/marker-shadow.png',    // ← your real link
+    iconSize:     [25, 41],
+    shadowSize:   [41, 41],
+    iconAnchor:   [12, 41],
+    shadowAnchor: [12, 41],
+    popupAnchor:  [1, -34]
+  });
 
-    // Fallback coordinates (used when no saved location exists)
-    var FALLBACK_LAT = -29.858;
-    var FALLBACK_LNG = 31.021;
+  try {
+    // ── Create map ────────────────────────────────────────────────
+    map = L.map('map', {
+      zoomControl: true,
+      zoomAnimation: true,
+      fadeAnimation: true
+    }).setView([FALLBACK_LAT, FALLBACK_LNG], 15);
 
-    // The custom marker icon (with shadow)
-    var markerIcon = L.icon({
-        iconUrl:    'https://i.ibb.co/ghQpS4H/marker-icon.png',      // ← Replace with your real direct link
-        shadowUrl:  'https://i.ibb.co/GvH6GsJX/marker-shadow.png',    // ← Replace with your real direct link
+    console.log("Map created");
 
-        iconSize:     [25, 41],      // size of the icon image
-        shadowSize:   [41, 41],      // size of the shadow image
-        iconAnchor:   [12, 41],      // point of the icon that is placed on the map coordinate
-        shadowAnchor: [12, 41],      // same for shadow
-        popupAnchor:  [1, -34]       // point from which popup opens relative to iconAnchor
+    // ── Add OSM tiles ─────────────────────────────────────────────
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    console.log("Tiles added");
+
+    // ── Create initial marker with fallback ───────────────────────
+    userMarker = L.marker([FALLBACK_LAT, FALLBACK_LNG], { icon: markerIcon })
+      .addTo(map)
+      .bindPopup('Waiting for location...')
+      .openPopup();
+
+    console.log("Fallback marker added");
+
+    // Force layout update (important in WebView)
+    setTimeout(() => {
+      map.invalidateSize();
+      console.log("Map invalidated size");
+    }, 400);
+
+  } catch (err) {
+    console.error("Map init failed:", err);
+    document.getElementById('loading').innerHTML =
+      "Map failed to load<br><small>" + err.message + "</small>";
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // FUNCTIONS CALLED FROM KODULAR
+  // ───────────────────────────────────────────────────────────────
+
+  /**
+   * Called once when screen loads – sets position from TinyDB
+   */
+  window.setInitialPosition = function(lat, lng) {
+    console.log("setInitialPosition called →", lat, lng);
+
+    const newLat = parseFloat(lat);
+    const newLng = parseFloat(lng);
+
+    // Update marker position
+    userMarker.setLatLng([newLat, newLng]);
+
+    // Better popup text
+    userMarker.setPopupContent('Your position – tap to plant!');
+    userMarker.openPopup();
+
+    // Center map smoothly
+    map.flyTo([newLat, newLng], 15, {
+      duration: 1.0,
+      easeLinearity: 0.3
     });
 
-    // ────────────────────────────────────────────────
-    // INITIAL MAP SETUP
-    // ────────────────────────────────────────────────
-
-    console.log("Map script started");
-
-    try {
-        // Create the Leaflet map instance
-        map = L.map('map', {
-            zoomControl: true,
-            zoomAnimation: true,
-            fadeAnimation: true
-        }).setView([FALLBACK_LAT, FALLBACK_LNG], 15);
-
-        console.log("Map object created");
-
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 19,
-            tileSize: 256
-        }).addTo(map);
-
-        console.log("Tile layer added");
-
-        // Create initial marker at fallback position
-        userMarker = L.marker([FALLBACK_LAT, FALLBACK_LNG], { icon: markerIcon })
-            .addTo(map)
-            .bindPopup('Waiting for your location...')
-            .openPopup();
-
-        console.log("Initial fallback marker added");
-
-        // Force map to recalculate size after a short delay (important in WebView)
-        setTimeout(function() {
-            map.invalidateSize();
-            console.log("Map size invalidated (forced redraw)");
-        }, 400);
-
-    } catch (err) {
-        console.error("Error during map initialization:", err);
-        document.getElementById('loading').innerHTML =
-            "Failed to initialize map<br><small>" + err.message + "</small>";
+    // IMPORTANT: hide loading here
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.style.display = 'none';
+      console.log("Loading overlay hidden (initial position)");
     }
+  };
 
-    // ────────────────────────────────────────────────
-    // FUNCTIONS THAT KODULAR CAN CALL
-    // ────────────────────────────────────────────────
+  /**
+   * Called on every location change
+   */
+  window.updateUserPosition = function(lat, lng) {
+    console.log("updateUserPosition called →", lat, lng);
 
-    /**
-     * Called once when the map screen loads – sets the position from TinyDB
-     * (or fallback if no saved location exists)
-     */
-    window.setInitialPosition = function(lat, lng) {
-        console.log("Initial position received from Kodular:", lat, lng);
+    const newLat = parseFloat(lat);
+    const newLng = parseFloat(lng);
 
-        // Update global tracking variables
-        currentLat = parseFloat(lat);
-        currentLng = parseFloat(lng);
+    // Move marker
+    userMarker.setLatLng([newLat, newLng]);
 
-        // Move marker to real position
-        userMarker.setLatLng([currentLat, currentLng]);
+    // Optional: update popup
+    userMarker.setPopupContent('Your position – tap to plant!<br><small>Live update</small>');
+    userMarker.openPopup();
 
-        // Update popup text
-        userMarker.setPopupContent('Your position – tap to plant!');
+    // Smooth fly-to
+    map.flyTo([newLat, newLng], 15, {
+      duration: 1.2,
+      easeLinearity: 0.25
+    });
 
-        // Smoothly center map on new position
-        map.flyTo([currentLat, currentLng], 15, {
-            duration: 1.2,
-            easeLinearity: 0.25
-        });
+    // Hide loading (in case it was still visible)
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.style.display = 'none';
+      console.log("Loading overlay hidden (live update)");
+    }
+  };
 
-        // Hide loading overlay
-        document.getElementById('loading').style.display = 'none';
-    };
-
-    /**
-     * Called whenever the location changes (live updates)
-     * Moves the marker smoothly and follows with the map
-     */
-    window.updateUserPosition = function(lat, lng) {
-        console.log("Live position update received:", lat, lng);
-
-        // Parse values (just in case)
-        var newLat = parseFloat(lat);
-        var newLng = parseFloat(lng);
-
-        // Move marker
-        userMarker.setLatLng([newLat, newLng]);
-
-        // Optional: slight visual feedback
-        userMarker.setPopupContent('Your position – tap to plant!<br><small>Updated live</small>');
-        userMarker.openPopup();
-
-        // Smooth camera movement
-        map.flyTo([newLat, newLng], 15, {
-            duration: 1.5,
-            easeLinearity: 0.3
-        });
-    };
-
-    // Optional: expose current position so Kodular can read it if needed
-    window.getCurrentPosition = function() {
-        return {
-            lat: currentLat || FALLBACK_LAT,
-            lng: currentLng || FALLBACK_LNG
-        };
-    };
-
-    console.log("Map script fully loaded – waiting for Kodular to send position...");
-  </script>
+  console.log("Map script fully initialized – waiting for Kodular calls...");
+</script>
 </body>
 </html>
+
 
