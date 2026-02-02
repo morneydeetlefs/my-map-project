@@ -47,6 +47,13 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+
+    window.updateUserPosition = function(lat, lng) {
+    console.log("UPDATE CALLED → lat:", lat, "lng:", lng);
+    alert("Position received:\nLat: " + lat + "\nLng: " + lng);
+    // your normal code here...
+};
+    
     // ────────────────────────────────────────────────
     // GLOBAL VARIABLES
     // ────────────────────────────────────────────────
@@ -186,3 +193,4 @@
   </script>
 </body>
 </html>
+
