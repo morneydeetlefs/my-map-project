@@ -2,174 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Guerrilla Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Map</title>
 
-  <!-- Leaflet CSS – provides all map styling -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5ir/XP5y4=" crossorigin="anonymous" />
 
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-    #map {
-      height: 100%;
-      width: 100%;
-    }
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
     #loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.75);
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
       color: white;
-      padding: 20px 40px;
-      border-radius: 12px;
-      z-index: 2000;
-      font-size: 1.1rem;
-      text-align: center;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      z-index: 9999;
+      transition: opacity 0.4s;
     }
+    #loading.hidden { opacity: 0; pointer-events: none; }
   </style>
 </head>
 <body>
-  <!-- Main map container -->
   <div id="map"></div>
+  <div id="loading">Loading map…</div>
 
-  <!-- Loading overlay – shown until map and position are ready -->
-  <div id="loading">Loading map...</div>
-
-  <!-- Load Leaflet JavaScript library from CDN -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Load Leaflet from CDN with integrity check -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 
   <script>
-  console.log("Map script started");
+    // ─────────────────────────────────────────────
+    // 1. Global variables
+    // ─────────────────────────────────────────────
+    let map = null;
+    let userMarker = null;
 
-  let map = null;
-  let userMarker = null;
+    const FALLBACK = { lat: -29.858, lng: 31.021 };
+    let currentPosition = { ...FALLBACK };
 
-  const FALLBACK_LAT = -29.858;
-  const FALLBACK_LNG = 31.021;
-
-  const markerIcon = L.icon({
-    iconUrl:    'https://i.ibb.co/ghQpS4H/marker-icon.png',      // ← your real link
-    shadowUrl:  'https://i.ibb.co/GvH6GsJX/marker-shadow.png',    // ← your real link
-    iconSize:     [25, 41],
-    shadowSize:   [41, 41],
-    iconAnchor:   [12, 41],
-    shadowAnchor: [12, 41],
-    popupAnchor:  [1, -34]
-  });
-
-  try {
-    // ── Create map ────────────────────────────────────────────────
-    map = L.map('map', {
-      zoomControl: true,
-      zoomAnimation: true,
-      fadeAnimation: true
-    }).setView([FALLBACK_LAT, FALLBACK_LNG], 15);
-
-    console.log("Map created");
-
-    // ── Add OSM tiles ─────────────────────────────────────────────
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(map);
-
-    console.log("Tiles added");
-
-    // ── Create initial marker with fallback ───────────────────────
-    userMarker = L.marker([FALLBACK_LAT, FALLBACK_LNG], { icon: markerIcon })
-      .addTo(map)
-      .bindPopup('Waiting for location...')
-      .openPopup();
-
-    console.log("Fallback marker added");
-
-    // Force layout update (important in WebView)
-    setTimeout(() => {
-      map.invalidateSize();
-      console.log("Map invalidated size");
-    }, 400);
-
-  } catch (err) {
-    console.error("Map init failed:", err);
-    document.getElementById('loading').innerHTML =
-      "Map failed to load<br><small>" + err.message + "</small>";
-  }
-
-  // ───────────────────────────────────────────────────────────────
-  // FUNCTIONS CALLED FROM KODULAR
-  // ───────────────────────────────────────────────────────────────
-
-  /**
-   * Called once when screen loads – sets position from TinyDB
-   */
-  window.setInitialPosition = function(lat, lng) {
-    console.log("setInitialPosition called →", lat, lng);
-
-    const newLat = parseFloat(lat);
-    const newLng = parseFloat(lng);
-
-    // Update marker position
-    userMarker.setLatLng([newLat, newLng]);
-
-    // Better popup text
-    userMarker.setPopupContent('Your position – tap to plant!');
-    userMarker.openPopup();
-
-    // Center map smoothly
-    map.flyTo([newLat, newLng], 15, {
-      duration: 1.0,
-      easeLinearity: 0.3
+    // ─────────────────────────────────────────────
+    // 2. Create custom icon (replace URLs with yours)
+    // ─────────────────────────────────────────────
+    const markerIcon = L.icon({
+      iconUrl:    'https://i.ibb.co/ghQpS4H/marker-icon.png',
+      shadowUrl:  'https://i.ibb.co/GvH6GsJX/marker-shadow.png',
+      iconSize:     [25, 41],
+      shadowSize:   [41, 41],
+      iconAnchor:   [12, 41],
+      shadowAnchor: [12, 41],
+      popupAnchor:  [1, -34]
     });
 
-    // IMPORTANT: hide loading here
-    const loading = document.getElementById('loading');
-    if (loading) {
-      loading.style.display = 'none';
-      console.log("Loading overlay hidden (initial position)");
+    // ─────────────────────────────────────────────
+    // 3. Initialize map
+    // ─────────────────────────────────────────────
+    function initMap() {
+      try {
+        map = L.map('map', {
+          zoomControl: true,
+          zoomAnimation: true,
+          fadeAnimation: true
+        }).setView([FALLBACK.lat, FALLBACK.lng], 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 19
+        }).addTo(map);
+
+        // Create marker
+        userMarker = L.marker([FALLBACK.lat, FALLBACK.lng], { icon: markerIcon })
+          .addTo(map)
+          .bindPopup('Waiting for location…')
+          .openPopup();
+
+        // Force redraw (very important in WebView)
+        setTimeout(() => map.invalidateSize(), 300);
+
+        console.log("Map initialized successfully");
+      } catch (e) {
+        console.error("Map init failed", e);
+        document.getElementById('loading').textContent = "Map failed to load";
+      }
     }
-  };
 
-  /**
-   * Called on every location change
-   */
-  window.updateUserPosition = function(lat, lng) {
-    console.log("updateUserPosition called →", lat, lng);
+    // ─────────────────────────────────────────────
+    // 4. Functions Kodular can call
+    // ─────────────────────────────────────────────
 
-    const newLat = parseFloat(lat);
-    const newLng = parseFloat(lng);
+    window.setInitialPosition = function(lat, lng) {
+      console.log("setInitialPosition →", lat, lng);
+      updatePosition(lat, lng, "Position loaded from storage");
+    };
 
-    // Move marker
-    userMarker.setLatLng([newLat, newLng]);
+    window.updateUserPosition = function(lat, lng) {
+      console.log("updateUserPosition →", lat, lng);
+      updatePosition(lat, lng, "Your position – tap to plant!");
+    };
 
-    // Optional: update popup
-    userMarker.setPopupContent('Your position – tap to plant!<br><small>Live update</small>');
-    userMarker.openPopup();
+    function updatePosition(lat, lng, popupText) {
+      if (!map || !userMarker) {
+        console.warn("Map or marker not ready yet");
+        return;
+      }
 
-    // Smooth fly-to
-    map.flyTo([newLat, newLng], 15, {
-      duration: 1.2,
-      easeLinearity: 0.25
-    });
+      const newLat = Number(lat);
+      const newLng = Number(lng);
 
-    // Hide loading (in case it was still visible)
-    const loading = document.getElementById('loading');
-    if (loading) {
-      loading.style.display = 'none';
-      console.log("Loading overlay hidden (live update)");
+      if (isNaN(newLat) || isNaN(newLng)) {
+        console.warn("Invalid coordinates received");
+        return;
+      }
+
+      // Update marker
+      userMarker.setLatLng([newLat, newLng]);
+      userMarker.setPopupContent(popupText);
+      userMarker.openPopup();
+
+      // Move map view
+      map.flyTo([newLat, newLng], 15, {
+        duration: 1.1,
+        easeLinearity: 0.25
+      });
+
+      // Hide loading
+      const loading = document.getElementById('loading');
+      loading.classList.add('hidden');
+      setTimeout(() => loading.style.display = 'none', 500);
+
+      console.log("Position updated & loading hidden");
     }
-  };
 
-  console.log("Map script fully initialized – waiting for Kodular calls...");
-</script>
+    // Start map initialization
+    initMap();
+  </script>
 </body>
 </html>
-
-
