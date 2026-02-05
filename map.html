@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Guerrilla Map</title>
+  <title>Guerrilla Gardens – Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -15,6 +15,7 @@
       padding: 0;
       overflow: hidden;
       background: #000;
+      font-family: Arial, Helvetica, sans-serif;
     }
     #map {
       height: 100%;
@@ -36,37 +37,68 @@
       opacity: 0;
       pointer-events: none;
     }
+    #welcome {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 16px;
+      border-radius: 12px;
+      z-index: 9000;
+      font-size: 1.1rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    #welcome button {
+      margin-top: 12px;
+      padding: 10px 24px;
+      font-size: 1.1rem;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="loading">Loading map…</div>
 
+  <div id="welcome" style="display:none;">
+    <p>Welcome to Guerrilla Gardens!</p>
+    <p>Tap anywhere to place your first garden (one-time free move).</p>
+    <p>After that, your saved location will load here automatically.</p>
+    <button onclick="document.getElementById('welcome').style.display='none'">Got it!</button>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
     let map = null;
     let userMarker = null;
+    let firstPlacementConfirmed = false;
 
     const FALLBACK = { lat: -29.858, lng: 31.021 };
-
     const markerIcon = L.icon({
-      iconUrl:    'https://i.ibb.co/ghQpS4H/marker-icon.png',
-      shadowUrl:  'https://i.ibb.co/GvH6GsJX/marker-shadow.png',
-      iconSize:     [25, 41],
-      shadowSize:   [41, 41],
-      iconAnchor:   [12, 41],
+      iconUrl: 'https://i.ibb.co/ghQpS4H/marker-icon.png',
+      shadowUrl: 'https://i.ibb.co/GvH6GsJX/marker-shadow.png',
+      iconSize: [25, 41],
+      shadowSize: [41, 41],
+      iconAnchor: [12, 41],
       shadowAnchor: [12, 41],
-      popupAnchor:  [1, -34]
+      popupAnchor: [1, -34]
     });
 
-    // ── Initialize map ────────────────────────────────────────
+    // ── Initialize map with fallback ─────────────────────────────
     function initMap() {
       map = L.map('map', {
         zoomControl: true,
         zoomAnimation: true,
         fadeAnimation: true
-      }).setView([FALLBACK.lat, FALLBACK.lng], 15);
+      }).setView([FALLBACK.lat, FALLBACK.lng], 13);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -78,40 +110,44 @@
         .bindPopup('Waiting for location…')
         .openPopup();
 
-      // Force multiple resize calls — this fixes cut-off map in WebViewer
+      // Multiple resize calls for WebViewer
       setTimeout(() => { map.invalidateSize(); console.log("Resize 1"); }, 300);
       setTimeout(() => { map.invalidateSize(); console.log("Resize 2"); }, 800);
       setTimeout(() => { map.invalidateSize(); console.log("Resize 3"); }, 1500);
       setTimeout(() => { map.invalidateSize(); console.log("Resize 4"); }, 3000);
     }
 
-    // ── Kodular injection functions ───────────────────────────
-    window.setInitialPosition = function(lat, lng) {
-      console.log("setInitialPosition →", lat, lng);
-      updatePosition(lat, lng, "Your position – tap to plant!");
-    };
-
-    window.updateUserPosition = function(lat, lng) {
-      console.log("updateUserPosition →", lat, lng);
-      updatePosition(lat, lng, "Your position – tap to plant!<br><small>Live</small>");
-    };
-
-    function updatePosition(lat, lng, popupText) {
-      if (!map || !userMarker) {
-        console.warn("Map/marker not ready yet");
-        return;
-      }
+    // ── Main function called from Kodular ─────────────────────────
+    window.setLocationAndZone = function(lat, lng, zoneName, zoneDescription) {
+      console.log("Received from app:", lat, lng, zoneName, zoneDescription);
 
       const newLat = Number(lat);
       const newLng = Number(lng);
 
-      if (isNaN(newLat) || isNaN(newLng)) return;
+      if (isNaN(newLat) || isNaN(newLng)) {
+        console.warn("Invalid coordinates received – using fallback");
+        newLat = FALLBACK.lat;
+        newLng = FALLBACK.lng;
+      }
 
-      userMarker.setLatLng([newLat, newLng]);
-      userMarker.setPopupContent(popupText);
-      userMarker.openPopup();
+      // Move / set marker
+      if (userMarker) {
+        userMarker.setLatLng([newLat, newLng]);
+      } else {
+        userMarker = L.marker([newLat, newLng], { icon: markerIcon }).addTo(map);
+      }
 
-      map.flyTo([newLat, newLng], 15, { duration: 1.0 });
+      // Show climate zone info in popup
+      let popupContent = `Your garden location<br><strong>${zoneName || 'Unknown Zone'}</strong>`;
+      if (zoneDescription) {
+        popupContent += `<br><small>${zoneDescription}</small>`;
+      }
+      popupContent += '<br>Tap to move (if allowed)';
+
+      userMarker.setPopupContent(popupContent).openPopup();
+
+      // Center map
+      map.flyTo([newLat, newLng], 15, { duration: 1.2 });
 
       // Hide loading
       const loading = document.getElementById('loading');
@@ -120,19 +156,58 @@
         setTimeout(() => loading.style.display = 'none', 600);
         console.log("Loading hidden");
       }
+    };
+
+    // ── First-time placement (optional – only if app allows) ──────
+    map.on('click', function(e) {
+      if (firstPlacementConfirmed) return;
+
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+
+      userMarker.setLatLng([lat, lng]);
+
+      userMarker.setPopupContent(
+        'Place your first garden here?<br>' +
+        '<button onclick="confirmFirstPlacement()">Yes – Confirm</button>'
+      ).openPopup();
+    });
+
+    function confirmFirstPlacement() {
+      if (firstPlacementConfirmed) return;
+
+      const pos = userMarker.getLatLng();
+      const lat = pos.lat;
+      const lng = pos.lng;
+
+      console.log("First placement confirmed:", lat, lng);
+
+      userMarker.setPopupContent('First garden saved! 🌱').openPopup();
+
+      // Send to Kodular
+      if (window.Android && window.Android.saveFirstGardenPosition) {
+        window.Android.saveFirstGardenPosition(lat, lng);
+      }
+
+      firstPlacementConfirmed = true;
     }
 
-    // Start map
+    // ── Start the map with fallback ───────────────────────────────
     initMap();
 
-    // Safety net — hide loading even if nothing else works
+    // Safety net
     setTimeout(() => {
       const loading = document.getElementById('loading');
       if (loading && loading.style.display !== 'none') {
         loading.style.display = 'none';
-        console.log("Safety net: loading hidden after timeout");
+        console.log("Safety net: loading hidden");
       }
     }, 6000);
+
+    // Optional: show welcome for new users (controlled by app)
+    // window.showWelcome = function() {
+    //   document.getElementById('welcome').style.display = 'block';
+    // };
   </script>
 </body>
 </html>
